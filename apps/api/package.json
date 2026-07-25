@@ -1,0 +1,17 @@
+{
+  "name": "@wherego/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wherego/domain": "workspace:*",
+    "@wherego/scheduler": "workspace:*",
+    "@wherego/geo": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest"
+  }
+}

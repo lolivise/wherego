@@ -1,0 +1,9 @@
+node_modules
+dist
+.wrangler
+.dev.vars
+*.tsbuildinfo
+
+# Patient data must never be committed. See docs/PLAN.md and CLAUDE.md.
+*.csv
+!tools/fixtures/**/*.csv
