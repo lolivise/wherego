@@ -12,6 +12,7 @@
     "@wherego/geo": "workspace:*"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "latest"
+    "@cloudflare/workers-types": "latest",
+    "wrangler": "^4.114.0"
   }
 }

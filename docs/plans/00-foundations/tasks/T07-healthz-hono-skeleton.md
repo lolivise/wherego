@@ -45,6 +45,28 @@ answer **200 unauthenticated, not 302**. §11.2 spells out why that matters at t
 "and nothing else" is a constraint, not a description. No uptime, no binding names, no environment,
 no D1 status. This endpoint is unauthenticated by design and reachable by anyone.
 
+## Found at T04 — 2026-07-26
+
+**`apps/api/src/index.test.ts` guards T04's stub. Rewrite it here — do not delete it.** T04 replaced
+three regexes over `index.ts` with a behavioural test that imports the module: it asserts
+`new PlanCoordinator().fetch()` is a 501, and that the default handler hands the request to
+`env.ASSETS.fetch()` and returns what came back. When this task replaces the fetch handler:
+
+- **The `PlanCoordinator` assertion stays true and stays.** The real Durable Object is Phase 3; the
+  501 stub is unchanged by T07.
+- **The delegation assertion becomes a claim about the catch-all.** `export default app` gives an
+  object with a `fetch` method, so the existing test shape — `worker.fetch(request, { ASSETS })` —
+  still works against a Hono app without modification. What changes is the path it is called with:
+  a path Hono does not route must still reach `env.ASSETS.fetch()`, or every SPA deep link 404s.
+
+**That last point is a conflict this task must resolve, not inherit.** The criterion below says *"an
+unknown path returns 404"*, and T04's `[assets]` block sets
+`not_found_handling = "single-page-application"` with `run_worker_first = true`, which means an
+unknown path should return `index.html` with a 200 — that is Scenario 5 of T04's contract and it is
+already proven passing. The two cannot both be true. The likely reading is that 404 means *an
+unknown `/api/…` path*, and that everything else falls through to the SPA, but **`/design-task` must
+ask rather than pick.**
+
 ## Acceptance criteria
 
 - [ ] `GET /healthz` returns HTTP 200 with `content-type: application/json`.

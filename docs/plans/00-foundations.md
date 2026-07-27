@@ -18,7 +18,8 @@ Nothing here is patient-facing. Everything here is load-bearing for everything t
 
 ## Prerequisites
 
-- Cloudflare account with billing enabled (Workers Paid required — see P0-03)
+- A Cloudflare account. **Workers Free is the starting plan** — nothing is purchased in Phase 0
+  (see P0-03; §2 has the reasoning and the Phase 2 review)
 - **A domain already registered in Cloudflare with an active zone** — confirm in P0-01 that it is
   in the *same* account as the Worker
 - Google Cloud account with billing
@@ -44,7 +45,7 @@ deployed Worker to bind to, so it runs **after P0-05**, not before P0-02.
 - **Confirm the zone sits in the same Cloudflare account that will hold the Worker.** This is the
   one thing left in this task that can bite: a zone under one account and a Worker under another
   cannot see each other, the Workers Route cannot be created, and the Access application has no
-  hostname to sit in front of. Check it now, before P0-03 buys Workers Paid on an account — finding
+  hostname to sit in front of. Check it now, before P0-03 provisions D1 on an account — finding
   it at P0-06 means moving either the zone or the billing relationship mid-week.
 - Choose the app hostname. A subdomain of the existing zone is fine and leaves the apex alone.
 - Bind it as a **custom domain** on the Worker once P0-05 is deployed.
@@ -75,12 +76,16 @@ pnpm workspaces, Node 24, TypeScript strict, vitest, eslint. Empty but wired: `p
 
 Spec: §2 *Repo layout*.
 
-### P0-03 · Cloudflare Workers Paid, D1 in APAC, wrangler config
+### P0-03 · Cloudflare Workers plan, D1 in APAC, wrangler config
 
-- Confirm the account is on **Workers Paid**. Held–Karp, the catch-up backfill, the nightly audit
-  and the §5.5 ranker are all comfortable at the paid plan's 30 s CPU ceiling and all impossible
-  at the free plan's 10 ms.
-- Pin `limits.cpu_ms` explicitly in `wrangler.toml` — do not inherit a default.
+- **Confirm and record the Workers plan. Buy nothing.** §2 has been revised: WhereGo starts on the
+  **Free** plan, and Paid is a one-click escape hatch decided in Phase 2 against a measurement. The
+  earlier "Paid is a hard prerequisite" claim was never measured, and Durable Objects — the one
+  thing that used to force Paid outright — now run on Free.
+- **Declare `PlanCoordinator` with `new_sqlite_classes`.** Only the SQLite storage backend is
+  available on Free; key-value is Paid-only. Correct on either plan, so it never needs revisiting.
+- **Omit `limits.cpu_ms` on Free** — it is a Paid-only setting and the 10 ms ceiling cannot be
+  raised. Pin it explicitly only if T03 finds the account already on Paid.
 - Create the D1 database with primary region **APAC**; record `database_id` in `wrangler.toml`
   (not a secret, §10.4).
 - Declare the three cron triggers and the `PlanCoordinator` Durable Object binding now, even
@@ -203,8 +208,9 @@ Spec: §2, §5.6 item 9, §10.3, §11.3.
 
 ### P0-11 · 1Password vault, service account, GitHub Environment
 
-- Populate the `wherego` vault per the §10.5 layout: `cloudflare`, `cloudflare-access`,
-  `google-maps`, `line`, plus `healthchecks/ping_url` and `backup/age_public_key`.
+- Populate the `Wherego` vault per the §10.5 layout — one `credentials` item with a section per
+  service: `CLOUDFLARE`, `CLOUDFLARE_ACCESS`, `GOOGLE_MAPS`, `LINE`, `HEALTHCHECKS`, `BACKUP`.
+  Section and field labels are matched literally by `op://`, so they are cased exactly as written.
 - Create the read-only service account scoped to that vault; set an expiry and calendar the
   rotation.
 - Add its token as `OP_SERVICE_ACCOUNT_TOKEN` — an **Environment** secret on `production`, never

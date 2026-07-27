@@ -46,19 +46,29 @@ Access is defence in depth here, not the control itself — §9 is explicit that
 default-deny on its own, precisely so that a hostname Access does not cover is not a hole. T08
 already ships that. This task closes the outer layer.
 
-`aud` and `team_domain` go into the `cloudflare-access` vault item T15 created empty. They become
+`AUD` and `TEAM_DOMAIN` go into the `CLOUDFLARE_ACCESS` section T15 created empty. They become
 §10.3 runtime secrets, pushed into the Worker at T20's deploy.
+
+## Prerequisite, already satisfied — found at T03, 2026-07-26
+
+**Zero Trust is on the account and Active: Teams Free Base, $0.00/mo.** Recorded here so this task
+does not have to discover it at the moment of building. The free tier covers **50 users** against a
+clinic of a handful, so §9's email-OTP policy costs nothing and **there is no purchase in this
+task**, exactly as with T03.
 
 ## Manual checklist
 
-1. Zero Trust → Access → Applications → **Add a self-hosted application** over the T02 hostname.
+1. Zero Trust → Access → Applications → **Add a self-hosted application** over the T02 hostname —
+   **`wherego.storium.work`, and only that hostname.** Not the zone, not a wildcard: T02 found the
+   apex `storium.work` is already serving through Cloudflare, so a broader scope would put whatever
+   else lives there behind the clinic's email-OTP policy.
 2. Session duration: **30 days**.
 3. Policy 1 — **Allow**, identity: **email one-time PIN**, with the clinic's email allowlist.
 4. Policy 2 — **Bypass**, path `/healthz`.
 5. Policy 3 — **Bypass**, the LINE webhook path (the same path T08 allowlists and T13 configured).
 6. Confirm there are exactly these three policies and no fourth.
 7. Copy the application **Audience (AUD) tag** and the **team domain** into
-   `op://wherego/cloudflare-access/aud` and `.../team_domain`.
+   `op://Wherego/credentials/CLOUDFLARE_ACCESS/AUD` and `.../TEAM_DOMAIN`.
 8. Test from a logged-out browser or a clean profile.
 
 ## Acceptance criteria
@@ -74,7 +84,7 @@ already ships that. This task closes the outer layer.
 - [ ] Exactly two bypass paths exist. A third would fail T08's CI assertion and must not exist here
       either.
 - [ ] Session duration is 30 days.
-- [ ] `aud` and `team_domain` are populated in the vault and resolve via the service account.
+- [ ] `AUD` and `TEAM_DOMAIN` are populated in the vault and resolve via the service account.
 - [ ] The two bypassed paths are byte-identical to the two in T08's Worker-side allowlist,
       confirmed by comparing them.
 

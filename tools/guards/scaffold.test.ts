@@ -49,8 +49,12 @@ describe('R1 — the tree exists', () => {
     }
   });
 
-  it('does not create wrangler.toml, migrations SQL, or a .github directory (out of scope)', () => {
-    expect(existsSync(path.join(repoRoot, 'apps/api/wrangler.toml'))).toBe(false);
+  // apps/api/wrangler.toml was out of scope for T01 (see this task's own file, "Explicitly
+  // not required") and is asserted absent by an earlier revision of this test. T04
+  // (docs/plans/00-foundations/tasks/T04-wrangler-config.md) is the task that creates it,
+  // still within Phase 0 — so the boundary this test protects moves here, not away. Only the
+  // CI directory, owned by T10, remains asserted absent.
+  it('does not create a .github directory (out of scope until T10)', () => {
     expect(existsSync(path.join(repoRoot, '.github'))).toBe(false);
   });
 });

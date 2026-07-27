@@ -21,9 +21,24 @@ the `PlanCoordinator` Durable Object binding, the Workers Static Assets block se
 
 ## Detail
 
-**Pin `limits.cpu_ms` explicitly — do not inherit a default** (§2, P0-03). An inherited default is
-a number nobody chose that changes when Cloudflare changes it, under a workload (§5.3 Held–Karp)
-that was sized against 30 s.
+**`PlanCoordinator` must be declared as a SQLite-backed Durable Object** — `new_sqlite_classes` in
+the migration block, **not** `new_classes`. §2: Durable Objects are available on the Workers Free
+plan, but *"only Durable Objects with SQLite storage backend are available"*; the key-value backend
+is Paid-only. Getting this wrong does not fail at config time — it fails when the DO is first
+instantiated, which is T06 at the earliest and possibly T20. Declaring it SQLite-backed is also the
+right default on Paid, so **this does not need revisiting if the plan changes later.**
+
+**Do not configure `limits.cpu_ms` while the account is on the Free plan** (§2, T03). This reverses
+P0-03's instruction to pin it explicitly. `limits.cpu_ms` is a **Paid-only** setting: on Free the
+ceiling is a flat 10 ms that cannot be raised, so pinning a number there is either ignored or an
+error, and either way it states a guarantee the plan does not provide. Read T03's recorded plan and
+act on it:
+
+- **Free** → omit the `[limits]` block entirely. Leave a comment saying why, and naming §2, so the
+  next reader does not "fix" the omission.
+- **Paid** (if T03 found the account already on it) → pin it explicitly, per the original reasoning:
+  an inherited default is a number nobody chose that changes when Cloudflare changes it, under a
+  workload (§5.3 Held–Karp) that was sized against 30 s.
 
 **Declare the three cron triggers and the `PlanCoordinator` binding now, even though the handlers
 are stubs** (P0-03). Copy the expressions exactly:
@@ -66,7 +81,10 @@ here produces a Worker that deploys clean and serves nothing.
 ## Acceptance criteria
 
 - [ ] `wrangler` parses the file without warnings (`wrangler deploy --dry-run` or equivalent).
-- [ ] `limits.cpu_ms` is present with an explicit value, not inherited.
+- [ ] `PlanCoordinator` is declared with `new_sqlite_classes`, not `new_classes` — required on the
+      Free plan and correct on either.
+- [ ] `limits.cpu_ms` matches the plan T03 recorded: **absent, with a comment naming §2, on Free**;
+      present with an explicit value on Paid.
 - [ ] All three cron expressions are present, byte-identical to the block above, each with its
       Asia/Taipei comment.
 - [ ] The D1 binding names database `wherego` and carries the `database_id` from T03.
@@ -91,7 +109,15 @@ in a test rather than by eye — these are the lines whose absence is invisible 
 Grep the repo for `ENVIRONMENT` and for each secret name in §10.3. No third party; no Cloudflare API
 call needed for a dry run.
 
-## Open questions
+## Open questions — both settled 2026-07-26
+
+**Answered in full in [`../work/T04-wrangler-config/plan.md`](../work/T04-wrangler-config/plan.md)
+under `## Answered questions`.** In short: names are `wherego` / `PlanCoordinator` / `DB` /
+`PLAN_COORDINATOR` / `ASSETS`, and **routing is worker-first — `run_worker_first = true`**, so
+§9(d) holds literally for every path and T08 and T20 inherit no caveat. Carried into T08 and T20.
+
+The original text is kept below because the reasoning in the second bullet is what the decision was
+weighed against.
 
 - Worker name, DO class name and script placement follow T01's conventions; if T01 left them open,
   they are settled here, not guessed.

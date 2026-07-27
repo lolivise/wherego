@@ -89,7 +89,10 @@ Also confirm here, from the phase acceptance list: each cron's healthchecks.io c
 - [ ] The smoke test has been observed **failing** on a SHA mismatch, without weakening the
       assertion to do it.
 - [ ] An unauthenticated app route returns **403 from the Worker** — not 302, not the Access login
-      page.
+      page. **Settled at T04: routing is worker-first (`run_worker_first = true`), so "an app route"
+      may be any path other than `/healthz` and the LINE webhook — `/` and any static asset
+      included.** Use `/` and one hashed bundle; a 200 with the SPA shell means the setting has
+      regressed to assets-first.
 - [ ] `backup.yml` ran on demand, and its artifact was **decrypted** and read.
 - [ ] The three healthchecks ping URLs in the vault match the checks created in T14.
 

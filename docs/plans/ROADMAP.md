@@ -139,7 +139,9 @@ where it must be closed, and each is called out in that phase's plan file.
 
 | Risk | Phase | Mitigation in the plan |
 |------|-------|------------------------|
-| The existing zone is in a different Cloudflare account from the Worker | 0 | Checked in P0-01 **before** P0-03 buys Workers Paid on an account. A mismatch means no Workers Route and no Access hostname, and it is far cheaper to find at the start of the week than at P0-06 |
+| The existing zone is in a different Cloudflare account from the Worker | 0 | **Closed.** T02 confirmed `storium.work` and the Worker share one account; the app is `wherego.storium.work`. A mismatch would have meant no Workers Route and no Access hostname |
+| The nightly planner exceeds the Free plan's 10 ms CPU ceiling | 2 | **Measure it** — §2 revised the "Paid is a hard prerequisite" claim to a decision taken against a number. First escape hatch: the planner is capped per doctor, so it splits into one invocation per doctor with no data-model change. Second: Workers Paid, US$5/month, account-wide, no redeploy and no code change |
+| First-import geocoding exceeds the Free plan's 50 subrequests per invocation | 1 | ~50 patients is the ceiling, and the first import is the largest. Chunk the geocode sweep across invocations, which §2 already provides for with the nightly straggler sweep |
 | Clinic cannot re-export with 地點 | 1 | Go-live scope drops to 38 patients and a named owner takes the data-entry project. Decide, don't drift |
 | Q1 answered "calendar month" after Phase 2 starts | 2 | `respectsCap` is one named function in `packages/domain` with a property test against brute force. Changing it is hours, not days — provided nothing re-derives the rule at a call site |
 | Phase 4 over-runs (the historical failure mode of this estimate) | 4 | Step 0 closes the four open engineering decisions before any component is written |

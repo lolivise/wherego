@@ -41,6 +41,27 @@ From §11.4:
 In Phase 0 it carries the migration and the allowlist assertion; the rest arrive with their phases.
 Wiring it to a real local D1 now is the deliverable.
 
+## Found at T04 — 2026-07-26
+
+**The command is `wrangler dev --local --env local`, and the `--env local` is not optional.**
+
+Wrangler does **not** inherit `d1_databases` or `durable_objects` into a named environment. T04
+therefore repeats both blocks under `[env.local]`, guarded by a both-directions deep-equal test — so
+the local environment has a database only because that duplication exists. `[assets]` *is*
+inherited and is deliberately not duplicated.
+
+Without `--env local` the Worker gets the top-level (production) bindings but **no `ENVIRONMENT`
+var**, so T08's local bypass never fires and every route returns 403. With it, all four bindings are
+present: `DB`, `PLAN_COORDINATOR`, `ASSETS`, `ENVIRONMENT ("local")` — verified against
+wrangler 4.114.0.
+
+**`apps/web/dist` must exist before wrangler runs at all.** The `[assets]` block hard-errors if the
+directory is absent, so `pnpm build` precedes anything in this task.
+
+Also carried here: wrangler warns that **scheduled Workers are not triggered automatically in local
+development**. The three crons are declared but will not fire; trigger one by hand with
+`curl "http://localhost:8787/cdn-cgi/handler/scheduled"` if this task needs to see one run.
+
 ## Acceptance criteria
 
 - [ ] One documented command brings up `wrangler dev --local` with migration 0001 already applied.

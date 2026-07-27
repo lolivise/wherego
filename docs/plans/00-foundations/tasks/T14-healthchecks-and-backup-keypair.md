@@ -39,7 +39,7 @@ worse than no check, and the `0-4` weekday field on the morning push is exactly 
 gets made.
 
 `HEALTHCHECK_PING_URL` is a §10.3 runtime secret. §10.5's vault layout lists
-`healthchecks/ping_url` singular — with three checks there are three URLs, and how they are stored
+`HEALTHCHECKS/PING_URL` singular — with three checks there are three URLs, and how they are stored
 is a question for T15, not an assumption to make here.
 
 **The `age` keypair:** `age-keygen`. The **public** key becomes `BACKUP_AGE_PUBLIC_KEY` and is
@@ -81,6 +81,6 @@ Nothing here is agent-executable.
 
 ## Open questions
 
-- **Three ping URLs, one vault field.** §10.5 shows `healthchecks/ping_url` singular and §10.3
+- **Three ping URLs, one vault field.** §10.5 shows `HEALTHCHECKS/PING_URL` singular and §10.3
   lists a single `HEALTHCHECK_PING_URL` secret. Decide in T15 whether that is three fields, one
   JSON blob, or one check with three tags — and if the spec's shape has to change, change the spec.

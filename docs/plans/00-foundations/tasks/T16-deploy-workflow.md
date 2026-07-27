@@ -71,6 +71,33 @@ rather than routing around it.
 **Pin every action to a full commit SHA** (§11.1) — this workflow holds a token that can rewrite the
 production Worker, which is the reason the rule exists at all.
 
+## Found at T04 — 2026-07-26
+
+**§11.2's deploy step is a bare `wrangler deploy`, and T04 has made that emit a warning.** Because
+`wrangler.toml` now defines a named `[env.local]` environment, any wrangler command run without
+`--env` prints:
+
+> Multiple environments are defined in the Wrangler configuration file, but no target environment
+> was specified for the deploy command.
+
+It is a warning, not an error, and the deploy still targets the top-level (production) config, which
+is the correct target. **Copy §11.2 verbatim anyway** — it is specification and this task's rule is
+to copy it. Recorded here so the warning is recognised as known rather than investigated at T20
+during the one deploy that matters. The clean form, if the spec is ever revised, is
+`wrangler deploy --env=""`.
+
+**`ENVIRONMENT` must never appear in the `secret bulk` payload** *(added 2026-07-26, T04 revision 2)*.
+§9's local bypass is gated on the **value** `"local"`, not on where the value came from — and a
+secret carries a value onto the deployed Worker by a route no configuration guard can see. T04's R11
+parses every wrangler config in the tree and proves exactly one `vars` table sets `ENVIRONMENT`, but
+that check ends at the config file. This is the other half of the same rule, it has never been
+guarded anywhere, and it belongs to the task that writes the payload. A criterion below asserts it.
+
+**Two commands in this workflow gain a hard prerequisite from T04's `[assets]` block:** wrangler
+errors out if `apps/web/dist` is missing, so the web build step must precede the deploy step. The
+existing criterion asserting the build step's index is lower than the 1Password step's index already
+covers the ordering; this is why it matters.
+
 ## Acceptance criteria
 
 - [ ] `actionlint` clean.
@@ -83,6 +110,10 @@ production Worker, which is the reason the rule exists at all.
       via `jq` on stdin. A regex over the file finds no secret in `argv` position.
 - [ ] The bookmark is written to all four destinations, and the artifact has 90-day retention.
 - [ ] Migrations run **before** `wrangler secret bulk`, which runs **before** `wrangler deploy`.
+- [ ] **The `secret bulk` payload contains no key named `ENVIRONMENT`** — the `jq` expression that
+      builds it is asserted to construct exactly the §10.3 names and no others. A secret of that
+      name would ship T08's local bypass to production, and no wrangler-config guard can see it
+      (T04 revision 2).
 - [ ] The smoke test uses `APP_HOST` from `env:` and asserts both `.ok` and `.commit`.
 - [ ] `environment: production`, `permissions: contents: read`, and `concurrency` with
       `cancel-in-progress: false` are all present.

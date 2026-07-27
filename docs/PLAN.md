@@ -81,7 +81,26 @@ flowchart TB
 - **Cloudflare Access** — email one-time PIN in front of the web app. Two paths are excluded: the LINE webhook and `/healthz`. **A custom domain is mandatory** — Access applications are defined over a hostname in a zone you control, and `*.workers.dev` cannot be placed behind Access. See §10.7 step 0.
 - **An external monitor is part of the architecture, not an ops afterthought.** Every detector in a system that lives inside the thing being detected is worthless the moment that thing stops running. The gap audit, the rule audit and the alerting all run in the Worker; `healthchecks.io` is the only observer outside the failure domain (R15).
 - **No R2, no KV, no Queues, no Workflows.** The CSV is parsed in memory and discarded; parsed rows live in the browser until Save (§4). Geocoding is a cache-first inline call with a nightly sweep for stragglers. At a few hundred addresses geocoded once and cached, none of the queueing machinery earns its keep. The Durable Object is the one exception, and it is bought for correctness rather than throughput.
-- **Workers Paid is a hard prerequisite.** Held–Karp, the catch-up backfill, the nightly rule audit and the §5.5 ranker are all comfortable at the paid plan's 30 s CPU ceiling and all impossible at the free plan's 10 ms. Pin `limits.cpu_ms` explicitly in `wrangler.toml` rather than inheriting a default. D1 primary region: **APAC**.
+- **Start on the Workers Free plan; treat Paid as a one-click escape hatch.** D1 primary region: **APAC**, on either plan.
+
+  This reverses an earlier position in this document, which called Workers Paid *"a hard prerequisite"* and asserted that Held–Karp, the catch-up backfill, the nightly rule audit and the §5.5 ranker were *"all impossible at the free plan's 10 ms."* **That claim was never measured** — none of those four exist yet — and one premise behind it has since changed: Durable Objects used to be Paid-only and are now available on Free, with the restriction that **only the SQLite storage backend is supported**, so `PlanCoordinator` must be declared with `new_sqlite_classes`.
+
+  The free plan's binding limits are **per-invocation, not per-day**, which is why a small clinic's volume does not rescue you from them:
+
+  | | Free | Paid |
+  |---|---|---|
+  | CPU per invocation | **10 ms**, not raisable | 30 s default, up to 5 min |
+  | Subrequests per invocation | **50** | 10,000 |
+  | D1 queries per invocation | **50** | 1,000 |
+  | Requests/day · storage · crons | 100,000 · 5 GB · 5 | unlimited · 1 TB · 250 |
+
+  Three of WhereGo's workloads are near those ceilings and must be written with them in view: the **nightly planning cron** (CPU), **first-import geocoding** (one subrequest per new address — 50 is roughly 50 patients), and the **weekly `age`-encrypted D1 export** (§11.3, CPU). The planner has a natural escape hatch that costs nothing architecturally: it is capped **per doctor**, so it splits into one invocation per doctor without touching the data model.
+
+  **`limits.cpu_ms` is a Paid-only setting** and is therefore not configured while on Free.
+
+  **This is a decision to revisit with a number, not a belief.** Phase 2 measures the real planner against 10 ms. If it does not fit and per-doctor splitting is not enough, Workers Paid is US$5/month, applies account-wide, and switching requires no redeploy and no code change.
+
+- **AWS (Lambda + DynamoDB) was costed and rejected.** It reaches roughly the same US$0/month — Lambda's 1M requests and DynamoDB's 25 GB are perpetual allowances — but it is rejected on three grounds that are not about price. **`PlanCoordinator` has no drop-in equivalent**, so §6.5's serialization argument would be rebuilt from scratch as conditional writes or a single-consumer queue. **The SPA and API would sit on two origins**, which reintroduces CORS and a second auth path, and forfeits the single-Access-application property §9 relies on. And **§3 is relational** — a `schedulable_patients` view and window queries like *"due in this range, unvisited, under this doctor's cap"* — which is the query shape DynamoDB serves worst. Since Cloudflare Free costs the same US$0 with no migration at all, AWS only becomes interesting if Free provably cannot run the planner; and at that point the fix is US$5, not a re-authored specification.
 
 ### Repo layout
 
@@ -1220,7 +1239,7 @@ Every secret lives in **1Password**. The only credential in GitHub is the servic
 
 | GitHub secret | Scope | Purpose |
 |---------------|-------|---------|
-| `OP_SERVICE_ACCOUNT_TOKEN` | **Environment** secret on `production` | Read-only access to the `wherego` vault |
+| `OP_SERVICE_ACCOUNT_TOKEN` | **Environment** secret on `production` | Read-only access to the `Wherego` vault |
 
 Use an **Environment** secret, not a repository secret — a repository secret is readable by any workflow on any branch.
 
@@ -1228,8 +1247,8 @@ Use an **Environment** secret, not a repository secret — a repository secret i
 
 | Credential | 1Password ref | Source |
 |------------|---------------|--------|
-| `CLOUDFLARE_API_TOKEN` | `op://wherego/cloudflare/api_token` | Cloudflare dashboard → My Profile → API Tokens |
-| `CLOUDFLARE_ACCOUNT_ID` | `op://wherego/cloudflare/account_id` | Cloudflare dashboard |
+| `CLOUDFLARE_API_TOKEN` | `op://Wherego/credentials/CLOUDFLARE/API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens |
+| `CLOUDFLARE_ACCOUNT_ID` | `op://Wherego/credentials/CLOUDFLARE/ACCOUNT_ID` | Cloudflare dashboard |
 
 **Cloudflare API token permissions** — custom token with exactly these:
 
@@ -1247,14 +1266,14 @@ Cloudflare has no GitHub OIDC support for API tokens, so this is long-lived. Set
 
 | Secret | 1Password ref | Source | Used for |
 |--------|---------------|--------|---------|
-| `LINE_CHANNEL_SECRET` | `op://wherego/line/channel_secret` | LINE Developers → Messaging API channel | Webhook `x-line-signature` verification |
-| `LINE_CHANNEL_ACCESS_TOKEN` | `op://wherego/line/channel_access_token` | LINE Developers (long-lived token) | Reply + morning push |
-| `GOOGLE_MAPS_API_KEY` | `op://wherego/google-maps/api_key` | Google Cloud Console | Geocoding / Places / Routes |
-| `CF_ACCESS_AUD` | `op://wherego/cloudflare-access/aud` | Cloudflare Zero Trust → Access app | Validating the Access JWT in the Worker |
-| `CF_ACCESS_TEAM_DOMAIN` | `op://wherego/cloudflare-access/team_domain` | Zero Trust settings | Access JWKS endpoint |
-| `LINE_ALERT_RECIPIENT` | `op://wherego/line/alert_recipient` | The engineer's own LINE user id | Destination for every job failure (R15) |
-| `HEALTHCHECK_PING_URL` | `op://wherego/healthchecks/ping_url` | healthchecks.io | External dead-man switch (R15) |
-| `BACKUP_AGE_PUBLIC_KEY` | `op://wherego/backup/age_public_key` | `age-keygen` | Encrypting the weekly D1 export (§11.5) |
+| `LINE_CHANNEL_SECRET` | `op://Wherego/credentials/LINE/CHANNEL_SECRET` | LINE Developers → Messaging API channel | Webhook `x-line-signature` verification |
+| `LINE_CHANNEL_ACCESS_TOKEN` | `op://Wherego/credentials/LINE/CHANNEL_ACCESS_TOKEN` | LINE Developers (long-lived token) | Reply + morning push |
+| `GOOGLE_MAPS_API_KEY` | `op://Wherego/credentials/GOOGLE_MAPS/API_KEY` | Google Cloud Console | Geocoding / Places / Routes |
+| `CF_ACCESS_AUD` | `op://Wherego/credentials/CLOUDFLARE_ACCESS/AUD` | Cloudflare Zero Trust → Access app | Validating the Access JWT in the Worker |
+| `CF_ACCESS_TEAM_DOMAIN` | `op://Wherego/credentials/CLOUDFLARE_ACCESS/TEAM_DOMAIN` | Zero Trust settings | Access JWKS endpoint |
+| `LINE_ALERT_RECIPIENT` | `op://Wherego/credentials/LINE/ALERT_RECIPIENT` | The engineer's own LINE user id | Destination for every job failure (R15) |
+| `HEALTHCHECK_PING_URL` | `op://Wherego/credentials/HEALTHCHECKS/PING_URL` | healthchecks.io | External dead-man switch (R15) |
+| `BACKUP_AGE_PUBLIC_KEY` | `op://Wherego/credentials/BACKUP/AGE_PUBLIC_KEY` | `age-keygen` | Encrypting the weekly D1 export (§11.5) |
 
 **Two hard rules on the Google key:** it is a *server-side* key that never reaches the browser, and it is **API-restricted** to Geocoding, Places, and Routes only. Interactive maps in the SPA use a separate referrer-restricted browser key — a build-time `var`, not a secret.
 
@@ -1264,21 +1283,40 @@ In `wrangler.toml`, in git, plain text: D1 `database_id`, the three cron express
 
 ### 10.5 1Password vault layout
 
+**One item, one section per service.** A secret reference is `op://<vault>/<item>/<section>/<field>`.
+
 ```
-Vault: wherego
-├── cloudflare
-│     api_token
-│     account_id
-├── cloudflare-access
-│     aud
-│     team_domain
-├── google-maps
-│     api_key
-└── line
-      channel_secret
-      channel_access_token
-      channel_id
+Vault: Wherego
+└── credentials                    ← a single item; the services are SECTIONS within it
+      ├── CLOUDFLARE
+      │     ACCOUNT_ID             ← T02 (the zone and the Worker must share it)
+      │     API_TOKEN              ← T15; exactly the five §10.2 permissions
+      ├── CLOUDFLARE_ACCESS
+      │     AUD                    ← T19
+      │     TEAM_DOMAIN            ← T19
+      ├── GOOGLE_MAPS
+      │     API_KEY                ← T12; server-side, API-restricted (§10.3)
+      ├── LINE
+      │     CHANNEL_SECRET         ← T13 (production)
+      │     CHANNEL_ACCESS_TOKEN   ← T13 (production)
+      │     CHANNEL_ID
+      │     ALERT_RECIPIENT        ← T13; LINE_ALERT_RECIPIENT
+      ├── HEALTHCHECKS
+      │     PING_URL               ← T14
+      └── BACKUP
+            AGE_PUBLIC_KEY         ← T14
+            AGE_PRIVATE_KEY        ← T14; never leaves the vault, never reaches CI
 ```
+
+**Every segment is matched literally.** `op://` resolves a section and a field by their exact
+labels, so `CLOUDFLARE` is not `Cloudflare` and `ACCOUNT_ID` is not `Account ID`. A mismatch is not
+a warning — it is an empty value at deploy time, reported against the *workflow step* rather than
+the field, which is why §11.2's references are verified by resolving them (T15) rather than by
+reading them.
+
+The single-item shape is deliberate and was chosen over one item per service: it is what exists in
+the vault. The cost is that all twelve fields share one item history, so per-service rotation
+(§10.6) is audited at the item level.
 
 ### 10.6 Rotation & hygiene
 
@@ -1289,14 +1327,14 @@ Vault: wherego
 
 ### 10.7 One-time manual setup (not in CI)
 
-0. **Bind a custom domain to the Worker.** The domain is already registered in Cloudflare and the zone is active — **confirm it is in the same Cloudflare account as the Worker**, or the Workers Route cannot be created and the Access application has no hostname to sit in front of. Cloudflare Access applications are defined over a hostname in a zone you control, and **`*.workers.dev` cannot be placed behind Access**, so the entire authentication design depends on this. Set `workers_dev = false`.
-1. Create the D1 database in the **APAC** region; record the id in `wrangler.toml`. Confirm the account is on **Workers Paid**.
+0. **Bind a custom domain to the Worker.** The app is **`wherego.storium.work`** — a subdomain of the `storium.work` zone, which is registered in Cloudflare on the owner's account and serving through Cloudflare nameservers. The apex is in use by something else and is left alone. This hostname is decided **once**, here, and is then referenced rather than re-chosen: it is the Access application's domain, the LINE production webhook host, `APP_HOST` in the `production` GitHub Environment, and the Worker's custom domain. **The zone and the Worker must sit in the same Cloudflare account**, or the Workers Route cannot be created and the Access application has no hostname to sit in front of. Cloudflare Access applications are defined over a hostname in a zone you control, and **`*.workers.dev` cannot be placed behind Access**, so the entire authentication design depends on this. Set `workers_dev = false`.
+1. Create the D1 database in the **APAC** region; record the id in `wrangler.toml`. Confirm the account's Workers plan and record it — **Free is the intended starting plan** (§2), and the plan in force decides whether `limits.cpu_ms` is configurable and whether `PlanCoordinator` must be SQLite-backed.
 2. Create the Cloudflare Access application over the app route, with an email-OTP policy and the clinic allowlist; **exclude the LINE webhook path and `/healthz`**; record `aud` + team domain.
 3. Create the LINE Messaging API channel; set the webhook URL; disable auto-reply; set the Official Account to not-searchable; issue the long-lived channel access token. Confirm the Taiwan push-message tier.
 4. **Create a second, free LINE Messaging API channel as the development OA**, with the engineer's own account as its sole approved recipient. A channel has exactly one webhook URL, so without this, pointing a `cloudflared` tunnel at it takes the *production* bot offline for the duration — which across Phase 5 is most of it. Ten minutes, no cost, and it removes the worst workflow constraint in the plan.
 5. Create the Google Cloud project; enable Geocoding/Places/Routes; create the API-restricted server key; set a billing budget alert. **Resolve the Maps ToS caching question** (§4, §9) before the schema is finalized.
 6. Create the healthchecks.io check for each cron and record the ping URLs. Generate the `age` backup keypair.
-7. Populate the `wherego` vault; create the read-only service account; add its token as the `production` GitHub Environment secret; **add a required reviewer to the `production` Environment** — one checkbox, and the only human gate between `git push` and a live clinical scheduler with no staging.
+7. Populate the `Wherego` vault; create the read-only service account; add its token as the `production` GitHub Environment secret; **add a required reviewer to the `production` Environment** — one checkbox, and the only human gate between `git push` and a live clinical scheduler with no staging.
 8. Seed `doctors` with the clinic's base coordinates, `holidays` for the current year, and `settings.expected_roster_size`.
 9. One manual `wrangler deploy` so `wrangler secret bulk` has a target on the first CI run.
 
@@ -1393,13 +1431,15 @@ jobs:
           export-env: false
         env:
           OP_SERVICE_ACCOUNT_TOKEN:  ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CLOUDFLARE_API_TOKEN:      op://wherego/cloudflare/api_token
-          CLOUDFLARE_ACCOUNT_ID:     op://wherego/cloudflare/account_id
-          GOOGLE_MAPS_API_KEY:       op://wherego/google-maps/api_key
-          LINE_CHANNEL_SECRET:       op://wherego/line/channel_secret
-          LINE_CHANNEL_ACCESS_TOKEN: op://wherego/line/channel_access_token
-          CF_ACCESS_AUD:             op://wherego/cloudflare-access/aud
-          CF_ACCESS_TEAM_DOMAIN:     op://wherego/cloudflare-access/team_domain
+          # Every segment is case- and spelling-exact — see §10.5. A typo here resolves
+          # to an empty string and fails as a wrangler error naming this step, not the field.
+          CLOUDFLARE_API_TOKEN:      op://Wherego/credentials/CLOUDFLARE/API_TOKEN
+          CLOUDFLARE_ACCOUNT_ID:     op://Wherego/credentials/CLOUDFLARE/ACCOUNT_ID
+          GOOGLE_MAPS_API_KEY:       op://Wherego/credentials/GOOGLE_MAPS/API_KEY
+          LINE_CHANNEL_SECRET:       op://Wherego/credentials/LINE/CHANNEL_SECRET
+          LINE_CHANNEL_ACCESS_TOKEN: op://Wherego/credentials/LINE/CHANNEL_ACCESS_TOKEN
+          CF_ACCESS_AUD:             op://Wherego/credentials/CLOUDFLARE_ACCESS/AUD
+          CF_ACCESS_TEAM_DOMAIN:     op://Wherego/credentials/CLOUDFLARE_ACCESS/TEAM_DOMAIN
 
       # With no staging environment, this bookmark IS the rollback plan — so it must
       # not live only in a CI log that expires and is unreadable at 2 a.m. It goes to
@@ -1499,7 +1539,7 @@ D1 Time Travel is a 30-day window and nothing else exists today. An accidental `
 
 | Phase | Deliverable | Est. |
 |-------|-------------|------|
-| **0 — Foundations** | **Custom domain bound to the Worker** (domain already in Cloudflare; confirm the zone and the Worker share an account). Monorepo, wrangler config, Workers Paid, D1 APAC + migrations, Cloudflare Access with email OTP and two excluded paths, default-deny JWT middleware, `workers_dev = false`. `wherego` vault + service account, `production` Environment with a required reviewer, `ci.yml` gating `deploy.yml`, bootstrap deploy, green production deploy. Miniflare loop. **Dev LINE channel. healthchecks.io. Preview-version flow. Google Maps ToS resolved. 個資法 conversation with the clinic (§9.1).** | **1 w** |
+| **0 — Foundations** | **Custom domain bound to the Worker** (domain already in Cloudflare; confirm the zone and the Worker share an account). Monorepo, wrangler config, Workers **Free** plan confirmed, D1 APAC + migrations, Cloudflare Access with email OTP and two excluded paths, default-deny JWT middleware, `workers_dev = false`. `Wherego` vault + service account, `production` Environment with a required reviewer, `ci.yml` gating `deploy.yml`, bootstrap deploy, green production deploy. Miniflare loop. **Dev LINE channel. healthchecks.io. Preview-version flow. Google Maps ToS resolved. 個資法 conversation with the clinic (§9.1).** | **1 w** |
 | **1 — Import** | CP950/Big5-HKSCS decode (**golden fixture in CI**), ROC parsing with per-field sanity bounds, six-column mapping, address normalization preserving 之-form distinctions. Parse-in-memory → rows to the browser → two-block review screen with inline editing, **sessionStorage durability + incremental Save**, live geocode-on-blur, duplicate badges → server-side re-validation → Save → redirect. `csv_imports` rows. Cache-first geocoding, three exception states, negative caching. | **2.5 w** |
 | **2 — Scheduler core** | `packages/scheduler`, pure: `PlainDate` + lint ban, cycle anchoring incl. the 預訪日期 seed, windows, **reachability-based last-chance**, the four-class rule-filtered partition, cap predicate, authorization, day-open penalty + append-to-committed-day fill, exact **ATSP** Held–Karp, urgent placement, **the §6 validator**, and **the §5.8 simulation harness**. Property tests incl. *every due date is last-chance on exactly one run*. No UI, no DB. | **3 w** |
 | **3 — Jobs** | `PlanCoordinator` Durable Object + lease. Commit cron `0 0 * * 1-5` with the R9 earliest-uncommitted rule, gap audit in **both** the commit and nightly jobs, non-working-day handling, blocked/overdue/unplaced alerts, decision trace. Nightly `0 18 * * *`: auto-complete with absence suppression, geocode sweep, rule audit, authorization sweep, **R14 assertion**, holiday staleness, heartbeat ping. Urgent placement with approval. Worker-level integration tests. | **2 w** |

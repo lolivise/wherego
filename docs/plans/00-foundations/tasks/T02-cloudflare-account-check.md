@@ -24,10 +24,12 @@ only thing left in P0-01 that can bite. Carried verbatim from the plan:
 > **Confirm the zone sits in the same Cloudflare account that will hold the Worker.** This is the
 > one thing left in this task that can bite: a zone under one account and a Worker under another
 > cannot see each other, the Workers Route cannot be created, and the Access application has no
-> hostname to sit in front of. Check it now, before P0-03 buys Workers Paid on an account — finding
+> hostname to sit in front of. Check it now, before P0-03 provisions D1 on an account — finding
 > it at P0-06 means moving either the zone or the billing relationship mid-week.
 
-This is why the task runs **before** T03 (Workers Paid, D1) rather than alongside the binding.
+This is why the task runs **before** T03 (the Workers plan check and D1) rather than alongside the
+binding. T03 no longer buys anything — §2 was revised to start on the Free plan — but the account
+question is unchanged: D1 is created on an account, and it must be the zone's.
 
 Why the hostname is decided here and not later: the same hostname becomes the Worker's custom
 domain (T18), the Access application's domain (T19), the LINE webhook URL (T13) and the `APP_HOST`
@@ -49,6 +51,23 @@ Access** — so the whole authentication design routes through this binding.
 5. Choose the app hostname. Record it.
 6. Record the hostname and both account IDs where T04, T13, T16 and T19 will read them —
    the hostname is not a secret; the account id belongs in 1Password (T15) per §10.2.
+
+## Decided — 2026-07-26
+
+**This section is the single source. T04, T13, T16, T18 and T19 reference it; none of them
+re-decides it.**
+
+| | |
+|---|---|
+| **Zone** | `storium.work` — owned by the user, registered in Cloudflare |
+| **App hostname** | **`wherego.storium.work`** |
+| **Shape** | Subdomain, not apex. The apex is already serving through Cloudflare and is left alone |
+| **Account** | The zone is on the user's Cloudflare account, which is the account that will hold the Worker (T03). One account, so the §10.7 step 0 match holds by construction |
+| **Account IDs** | Not recorded here. `op://Wherego/credentials/CLOUDFLARE/ACCOUNT_ID` only, per §10.2 |
+
+Where this hostname is read again: the Access application's domain (T19), the LINE production
+webhook host (T13), `APP_HOST` as a `production` Environment variable (T15, consumed by T16's
+smoke test), and the Worker's custom domain (T18).
 
 ## Acceptance criteria
 

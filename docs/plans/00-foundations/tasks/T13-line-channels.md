@@ -38,7 +38,7 @@ which tier), which T11 asks the clinic. Confirming the tier here means the clini
 question rather than a hypothetical one.
 
 The credentials this task produces are §10.3 runtime secrets — `LINE_CHANNEL_SECRET`,
-`LINE_CHANNEL_ACCESS_TOKEN` — plus `channel_id` per the §10.5 vault layout. They go to T15.
+`LINE_CHANNEL_ACCESS_TOKEN` — plus `CHANNEL_ID` per the §10.5 vault layout. They go to T15.
 `LINE_ALERT_RECIPIENT` (the engineer's own LINE user id, the destination for every job failure under
 R15) is also captured here, since obtaining it means messaging the dev channel.
 

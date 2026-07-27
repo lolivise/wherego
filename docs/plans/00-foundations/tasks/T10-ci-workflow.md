@@ -59,14 +59,44 @@ A fresh CI checkout hits exactly this gate and passes **only because that block 
 Do not remove it, and if a later task adds a dependency with a postinstall script, it needs the same
 treatment. Verified versions at T01: pnpm 11.0.8, Node 24, `esbuild` via `vite@7.3.6`.
 
+## Found at T04 — 2026-07-26
+
+**Two more dependencies need `allowBuilds`, for exactly the reason above.** T04 adds `wrangler` to
+`@wherego/api`, which pulls **`workerd`** and its own copy of **`esbuild`** — both with postinstall
+scripts. T04 adds `workerd: true` alongside the existing `esbuild: true`. Verified versions:
+wrangler 4.114.0, workerd 1.20260722.1, esbuild 0.28.1.
+
+**The wrangler dry run belongs in this workflow, and its ordering is not optional:**
+
+```
+pnpm build
+pnpm --filter api exec wrangler deploy --dry-run --env=""
+```
+
+- **`pnpm build` first.** The `[assets]` block points at `apps/web/dist`, and wrangler
+  **hard-errors** if that directory does not exist. `dist` is gitignored, so a fresh checkout has
+  none.
+- **`--env=""` is required for a clean run.** With `[env.local]` defined, a bare dry run warns that
+  no target environment was specified.
+- **No credentials.** The dry run makes no API call — verified with `CLOUDFLARE_API_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID` unset — so this preserves the workflow's "needs zero credentials"
+  property.
+- **Assert empty stderr, not just exit 0.** Wrangler reports an unrecognized config key as a warning
+  and still exits 0; the whole point of running it in CI is to catch a key that a wrangler upgrade
+  has renamed.
+
 ## Acceptance criteria
 
 - [ ] `ci.yml` is valid workflow YAML — `actionlint` clean.
+- [ ] `pnpm build` runs **before** `pnpm --filter api exec wrangler deploy --dry-run --env=""`, and
+      the dry-run step asserts empty stderr as well as exit 0.
 - [ ] `pnpm install --frozen-lockfile` completes in CI **non-interactively** — no build-script
       approval prompt, no silent exit 1. This is the T01 carry-forward above.
 - [ ] It triggers on `pull_request` and on `push` to `main`, and on nothing else.
 - [ ] All seven steps are present, in the order above.
-- [ ] Node is 22 and pnpm caching is enabled.
+- [ ] Node is **24** and pnpm caching is enabled. (Was written as 22; the spec moved to Node 24 at
+      T01 — `docs/PLAN.md` §11.1/§11.2, `.nvmrc` and the root `engines` range all say 24, and this
+      line was the last place still disagreeing with them.)
 - [ ] **Every** `uses:` is pinned to a full 40-character commit SHA. A regex over the file finds
       no `@v` tag reference outside a comment.
 - [ ] The job declares no `secrets`, no `environment`, and reads no `${{ secrets.* }}`.

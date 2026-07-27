@@ -1,0 +1,106 @@
+# WhereGo Worker configuration. TOML rather than the wrangler.jsonc default, because §10.4,
+# P0-03 and four task files all name wrangler.toml.
+#
+# Top level is PRODUCTION. That direction is deliberate: a missing or misspelled --env falls
+# back to a config that is correct for production, never to one that is correct for local. See
+# docs/plans/00-foundations/work/T04-wrangler-config/plan.md.
+#
+# Every value and comment here was checked against wrangler 4.114.0 running in a scratchpad
+# (see plan.md "Findings that changed the plan") rather than recalled from memory or an older
+# wrangler major — this block's field names have changed across majors.
+
+name = "wherego"
+main = "src/index.ts"
+compatibility_date = "2026-07-26"
+
+# §9(b): *.workers.dev cannot be placed behind Cloudflare Access. This is one of the three legs
+# of the authentication design, alongside the default-deny middleware (T08) and the CI test that
+# keeps it honest (T10). Must be the boolean `false`, not the string "false" and not absent.
+workers_dev = false
+
+# NO [limits] BLOCK, top level or in any environment. `limits.cpu_ms` is a Paid-only setting and
+# the account is on Workers Free (T03, checked 2026-07-26): the CPU ceiling is a flat 10 ms that
+# cannot be raised, so pinning a number here either does nothing or errors, and either way it
+# states a guarantee the plan does not provide. See docs/PLAN.md §2. Phase 2 revisits this
+# against a measured planner run, not a belief — do not "fix" this omission without one.
+
+[[d1_databases]]
+binding       = "DB"
+database_name = "wherego"
+database_id   = "f5adacb4-abce-41c9-aa82-86dc3b6f8334" # not a secret — §10.4, lives in git in plain text
+
+[[durable_objects.bindings]]
+name       = "PLAN_COORDINATOR"
+class_name = "PlanCoordinator"
+
+[[migrations]]
+tag                = "v1"
+new_sqlite_classes = ["PlanCoordinator"]
+# Must be the SQLite-backed migration key above, not the key-value one. §2: Durable Objects are
+# available on Workers Free, but only the SQLite storage backend is — the key-value backend is
+# Paid-only. Getting this wrong does not fail at config time; it fails when the DO is first
+# instantiated (T06 at the earliest, possibly T20).
+
+[triggers]
+crons = [
+  "0 0 * * 1-5",  # Mon-Fri 08:00 Asia/Taipei — commit run
+  "0 23 * * 0-4", # Mon-Fri 07:00 Asia/Taipei — morning push
+  "0 18 * * *",   # daily 02:00 Asia/Taipei — nightly maintenance
+]
+# Taipei is fixed UTC+8 with no DST. Do not "fix" these with offset arithmetic later. The second
+# expression reads 0-4 rather than 1-5 because 07:00 +08 is the PREVIOUS UTC day — it is not a typo.
+
+[assets]
+# Relative to this file's own location (apps/api/), not to the repo root — so ../web/dist, the
+# output of apps/web's Vite build (`pnpm build` at the repo root).
+directory = "../web/dist"
+binding   = "ASSETS"
+
+# Measured behaviour (wrangler 4.114.0, scratchpad) — what actually reaches the Worker vs. the
+# asset router for a request to each of these paths:
+#
+#   run_worker_first          |  /   | /app.css | /healthz | /plan/2026-08-03
+#   --------------------------|------|----------|----------|------------------
+#   omitted (default)         | asset| asset    | Worker   | Worker
+#   true                      | Worker | Worker | Worker   | Worker
+#   ["/", "/index.html"]      | Worker | asset  | shell(!) | shell(!)
+#
+# The array form is the failure mode being guarded against, not a safer middle ground: it
+# INVERTS the default for every path outside the list, so an unlisted route (e.g. /healthz, or
+# any Phase 3 API route not added to the list) is served by the asset router and never reaches
+# the Worker at all — it "deploys clean and serves nothing". Set to the boolean `true`, never an
+# array, so every request — including static assets — reaches the Worker. This makes §9(d)
+# ("an unauthenticated request to an app route returns 403") literally true for every path with
+# no caveat, at the cost of one Worker invocation per static file (Free's 100,000 requests/day
+# is roughly three orders of magnitude of headroom for this clinic's traffic). See plan.md
+# "Answered questions" — this was a user decision, not a default.
+run_worker_first = true
+
+# `not_found_handling` alone does not give SPA fallback when a Worker is present — the asset
+# router only applies it to requests that arrive through the ASSETS binding. This also requires
+# apps/api/src/index.ts to export a default fetch handler that calls env.ASSETS.fetch(request).
+not_found_handling = "single-page-application"
+
+# [env.local] sets ENVIRONMENT = "local" — and NOTHING ELSE in this repository may set that
+# value (R11 / T08's local-Access-bypass gate). wrangler does not inherit `d1_databases` or
+# `durable_objects.bindings` into a named environment (measured: without repeating them here,
+# `env.ENVIRONMENT` was the ONLY binding `--env=local` had — no database, no Durable Object).
+# `[assets]` IS inherited (measured: removing an [env.local.assets] override still left
+# env.ASSETS in the --env=local binding table), so it is deliberately NOT duplicated below.
+#
+# This duplication is exactly the second implementation this repo otherwise refuses to have —
+# honoured the only way wrangler allows: tools/guards/wrangler-config.test.ts parses this file
+# and asserts the two blocks below are deep-equal to their top-level counterparts, in both
+# directions. A value changed in one place and not the other fails `pnpm test` rather than
+# silently pointing T06's local loop at a database that does not exist.
+[env.local.vars]
+ENVIRONMENT = "local"
+
+[[env.local.d1_databases]]
+binding       = "DB"
+database_name = "wherego"
+database_id   = "f5adacb4-abce-41c9-aa82-86dc3b6f8334"
+
+[[env.local.durable_objects.bindings]]
+name       = "PLAN_COORDINATOR"
+class_name = "PlanCoordinator"

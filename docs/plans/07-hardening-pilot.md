@@ -57,7 +57,12 @@ Spec: §9.
 
 Run the system at **twice the pilot roster** and assert:
 
-- the commit run stays inside the Workers Paid 30 s CPU ceiling (`limits.cpu_ms` is pinned, P0-03);
+- the commit run stays inside **the CPU ceiling of the plan actually in force** — on Workers Free
+  that is a flat **10 ms** per invocation and `limits.cpu_ms` does not exist; on Paid it is the
+  pinned `limits.cpu_ms` (§2, T03, T04). At twice the pilot roster this is the sharpest test in the
+  phase: it is the measurement §2 defers the Free-vs-Paid decision to, and if it fails, the fix is
+  either splitting the commit run per doctor or US$5/month — decide it here with the number in hand,
+  not by argument;
 - the nightly job's nine items complete inside their window;
 - Held–Karp on 8 stops plus origin and destination stays in microseconds, as predicted (2,048
   states, ~16,384 relaxations);

@@ -59,10 +59,35 @@ second source for it.
 written and tested against a **local mock JWKS** with a locally generated key pair; that is what
 makes this task executable before the Access application exists.
 
+## Settled at T04 — 2026-07-26
+
+**Routing is worker-first: `run_worker_first = true`.** T04's open question is closed, and it
+changes two things here.
+
+**"An app route" means every path**, `/` and every static asset included, with `/healthz` and the
+LINE webhook as the only two exceptions. §9(d) therefore holds literally and needs no caveat — that
+is exactly why worker-first was chosen over the cheaper assets-first default.
+
+**Static assets reach this middleware and must be default-denied, not allowlisted.** A logged-in
+browser carries the Access cookie, so the SPA's own JS and CSS authorize normally on every request
+after login. **The allowlist stays at exactly two entries** — adding `/assets/*` to make a 403 go
+away would put the app's entire front end back outside the control and would fail the criterion
+below.
+
+**T04 could not prove `run_worker_first = true` behaviourally; this task can, and should.** T04's
+stub Worker forwards every path to `env.ASSETS.fetch()`, so worker-first and assets-first produce
+byte-identical responses on every path — measured side by side, not assumed. In T04 it is a static
+assertion on `wrangler.toml`. Once this middleware exists, an unauthenticated `GET /` returning 403
+is the first real evidence that the setting is in force, and a regression to assets-first would show
+up here as a 200 with the SPA shell.
+
 ## Acceptance criteria
 
 - [ ] Under the production config, an unauthenticated `GET` to an app route returns **403** — not
       302, not 401, not 404.
+- [ ] **`GET /` unauthenticated returns 403**, and so does a request for a built static asset. This
+      is the behavioural proof of T04's `run_worker_first = true`; a 200 with the SPA shell means the
+      Worker is no longer first.
 - [ ] A CI test asserts the unauthenticated allowlist has **exactly two** entries, and names them.
       Adding a third entry fails the test.
 - [ ] `GET /healthz` with no JWT returns 200.

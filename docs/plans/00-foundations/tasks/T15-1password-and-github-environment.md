@@ -6,7 +6,7 @@
 
 ## Outcome
 
-Every credential in the system lives in the `wherego` 1Password vault; a read-only service account
+Every credential in the system lives in the `Wherego` 1Password vault; a read-only service account
 can read exactly that vault; its token is a `production` **Environment** secret behind a required
 reviewer; and the Cloudflare API token has exactly the five §10.2 permissions.
 
@@ -19,34 +19,39 @@ reviewer; and the Cloudflare API token has exactly the five §10.2 permissions.
 ## Detail
 
 **Every secret lives in 1Password. The only credential in GitHub is the service account token that
-unlocks the rest** (§10). Vault layout from §10.5, plus the two fields §10.3 requires that the
-layout block omits:
+unlocks the rest** (§10). Vault layout from §10.5 — **one item, one section per service**, so a
+reference is `op://<vault>/<item>/<section>/<field>`:
 
 ```
-Vault: wherego
-├── cloudflare
-│     api_token
-│     account_id
-├── cloudflare-access
-│     aud                    ← T19 fills these; create the item now, leave them empty
-│     team_domain
-├── google-maps
-│     api_key                ← T12
-├── line
-│     channel_secret         ← T13 (production)
-│     channel_access_token   ← T13 (production)
-│     channel_id
-│     alert_recipient        ← T13 (LINE_ALERT_RECIPIENT, §10.3)
-├── healthchecks
-│     ping_url               ← T14; three checks, one field — see T14's open question
-└── backup
-      age_public_key         ← T14
-      age_private_key        ← T14; never leaves the vault, never reaches CI
+Vault: Wherego
+└── credentials                    ← a single item; the services are SECTIONS within it
+      ├── CLOUDFLARE
+      │     ACCOUNT_ID             ← T02, already stored
+      │     API_TOKEN              ← step 2 below
+      ├── CLOUDFLARE_ACCESS
+      │     AUD                    ← T19 fills these; create them now, leave them empty
+      │     TEAM_DOMAIN
+      ├── GOOGLE_MAPS
+      │     API_KEY                ← T12
+      ├── LINE
+      │     CHANNEL_SECRET         ← T13 (production)
+      │     CHANNEL_ACCESS_TOKEN   ← T13 (production)
+      │     CHANNEL_ID
+      │     ALERT_RECIPIENT        ← T13 (LINE_ALERT_RECIPIENT, §10.3)
+      ├── HEALTHCHECKS
+      │     PING_URL               ← T14; three checks, one field — see T14's open question
+      └── BACKUP
+            AGE_PUBLIC_KEY         ← T14
+            AGE_PRIVATE_KEY        ← T14; never leaves the vault, never reaches CI
 ```
 
-`BACKUP_AGE_PUBLIC_KEY` and `HEALTHCHECK_PING_URL` are in §10.3's secrets table but not in §10.5's
-layout block; P0-11 resolves it by naming `healthchecks/ping_url` and `backup/age_public_key`
-explicitly. The **private** key is stored but is never a Worker secret and never enters CI.
+**Every segment matches literally** — `CLOUDFLARE` is not `Cloudflare`, `ACCOUNT_ID` is not
+`Account ID`. A mismatched label resolves to an empty value, and the failure is reported against
+the workflow step rather than the field. This is exactly what checklist step 9 exists to catch.
+
+The `BACKUP_AGE_PUBLIC_KEY` / `HEALTHCHECK_PING_URL` omission that P0-11 had to resolve is **gone**
+— §10.5's layout block now lists all twelve fields, so this task and the spec no longer disagree.
+The **private** key is stored but is never a Worker secret and never enters CI.
 
 **Environment secret, not repository secret** (§10.1) — verbatim, because the distinction is one
 dropdown and the failure is total:
@@ -79,11 +84,12 @@ Also §10.6: enable GitHub **secret scanning + push protection**.
 
 ## Manual checklist
 
-1. Create the `wherego` vault and every item above. Create the `cloudflare-access` item now with
-   empty fields so T19 has somewhere to write.
+1. In the `Wherego` vault, extend the `credentials` item so every section and field above exists.
+   `CLOUDFLARE/ACCOUNT_ID` is already there from T02. Create `CLOUDFLARE_ACCESS/AUD` and
+   `TEAM_DOMAIN` now with empty values so T19 has somewhere to write.
 2. Create the Cloudflare API token with **exactly** the five permissions — no more. Set an expiry.
-   Put it and the account id into `cloudflare`.
-3. Create the read-only 1Password **service account**, scoped to the `wherego` vault only. Set an
+   Put it in `CLOUDFLARE/API_TOKEN`.
+3. Create the read-only 1Password **service account**, scoped to the `Wherego` vault only. Set an
    expiry. Put a calendar reminder for the rotation.
 4. GitHub → Settings → Environments → create `production`.
 5. Add `OP_SERVICE_ACCOUNT_TOKEN` as an **Environment** secret on `production`. Confirm it is not
@@ -96,9 +102,9 @@ Also §10.6: enable GitHub **secret scanning + push protection**.
 
 ## Acceptance criteria
 
-- [ ] Every item and field in the layout above exists in the `wherego` vault. `cloudflare-access`
-      exists with empty `aud` / `team_domain`, pending T19.
-- [ ] The service account is read-only and scoped to `wherego` only — it cannot read another vault.
+- [ ] Every section and field in the layout above exists in `Wherego/credentials`, spelled and
+      cased exactly. `CLOUDFLARE_ACCESS/AUD` and `TEAM_DOMAIN` exist and are empty, pending T19.
+- [ ] The service account is read-only and scoped to `Wherego` only — it cannot read another vault.
       Verified by trying.
 - [ ] `OP_SERVICE_ACCOUNT_TOKEN` is an Environment secret on `production` and is **not** a
       repository secret.
@@ -109,8 +115,9 @@ Also §10.6: enable GitHub **secret scanning + push protection**.
 - [ ] The Cloudflare API token and the service account token both have an expiry, and both
       rotations are in a calendar.
 - [ ] Secret scanning and push protection are on.
-- [ ] Every `op://wherego/...` reference used in §11.2 resolves. Proven by resolving them, not by
-      reading the paths.
+- [ ] Every `op://Wherego/credentials/...` reference used in §11.2 resolves to a **non-empty**
+      value. Proven by resolving them, not by reading the paths — a wrong section or field label
+      resolves empty rather than erroring.
 - [ ] No secret was echoed to a terminal or passed as a command-line argument (§10.6).
 
 ## Validation
@@ -124,5 +131,5 @@ prompt** — validation records that a reference resolved, never what it resolve
 
 ## Open questions
 
-- **Three healthchecks ping URLs, one `ping_url` field** (carried from T14). Decide the shape here
+- **Three healthchecks ping URLs, one `PING_URL` field** (carried from T14). Decide the shape here
   and, if it differs from §10.3/§10.5, update the spec rather than diverging from it.
